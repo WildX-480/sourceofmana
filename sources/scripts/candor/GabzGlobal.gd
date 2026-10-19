@@ -2,7 +2,7 @@ extends NpcScript
 
 # Mission parameters
 var rewardExp : int		= 1000
-var rewardGP : int		= 10000
+var rewardGP : int		= 500
 
 # Wave parameters
 var monstersPool : Array[EntityData]	= []

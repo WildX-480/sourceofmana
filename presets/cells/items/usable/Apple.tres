@@ -16,7 +16,7 @@ _modifiers = Array[ExtResource("2_g4j6d")]([SubResource("Resource_y0bgm")])
 
 [resource]
 script = ExtResource("1_66yfp")
-buyPrice = 10
+buyPrice = 3
 sellPrice = 1
 id = 215387671
 name = "Apple"

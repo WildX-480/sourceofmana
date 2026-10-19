@@ -29,7 +29,7 @@ func OnChestExchanged(result : ActorInventory.ExchangeResult):
 			if not IsTriggering():
 				Trigger()
 			SetQuest(questID, ProgressCommons.SNAKE_PIT_THIEF.REWARDS_WITHDREW)
-			AddGP(200)
+			AddGP(10)
 			AddExp(50)
 			AddKarma(2)
 		ActorInventory.ExchangeResult.MISSING_ITEMS:

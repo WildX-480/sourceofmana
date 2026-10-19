@@ -1,7 +1,7 @@
 extends NpcScript
 
 #
-const COST_GP : int = 10000
+const COST_GP : int = 500
 const SNAKE_SKIN_AMOUNT : int = 10
 
 #

@@ -164,21 +164,21 @@ func GiveRewards(playerRID : int, player : PlayerAgent):
 
 	if run.isDaily:
 		NpcCommons.AddExp(player, 100)
-		NpcCommons.AddGP(player, 500)
+		NpcCommons.AddGP(player, 25)
 		dailyCooldowns[playerRID] = Time.get_unix_time_from_system() + DAILY_COOLDOWN_SECS
 	else:
 		match run.nextState:
 			ProgressCommons.SHIP_PETER_BOUNTY.WAVE_ONE_DONE:
 				NpcCommons.AddExp(player, 100)
-				NpcCommons.AddGP(player, 500)
+				NpcCommons.AddGP(player, 25)
 				NpcCommons.SetQuest(player, QUEST_ID, ProgressCommons.SHIP_PETER_BOUNTY.WAVE_ONE_DONE)
 			ProgressCommons.SHIP_PETER_BOUNTY.WAVE_TWO_DONE:
 				NpcCommons.AddExp(player, 150)
-				NpcCommons.AddGP(player, 1000)
+				NpcCommons.AddGP(player, 50)
 				NpcCommons.SetQuest(player, QUEST_ID, ProgressCommons.SHIP_PETER_BOUNTY.WAVE_TWO_DONE)
 			ProgressCommons.SHIP_PETER_BOUNTY.ALL_DONE:
 				NpcCommons.AddExp(player, 250)
-				NpcCommons.AddGP(player, 1500)
+				NpcCommons.AddGP(player, 75)
 				NpcCommons.SetQuest(player, QUEST_ID, ProgressCommons.SHIP_PETER_BOUNTY.ALL_DONE)
 				dailyCooldowns[playerRID] = Time.get_unix_time_from_system() + DAILY_COOLDOWN_SECS
 

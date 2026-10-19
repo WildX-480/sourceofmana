@@ -87,7 +87,7 @@ func OnDeliverWater():
 		Think("Nathan quickly pours all the water you have brought to him all over himself.")
 		Think("You watch as the water you carefully carried all the way here runs down his body and soaks into the sand below.")
 		AddExp(50)
-		AddGP(100)
+		AddGP(150)
 		Action(OnComplete)
 	else:
 		Action(Farewell)

@@ -58,7 +58,7 @@ func OnEnvelopeExchanged(result : ActorInventory.ExchangeResult):
 	match result:
 		ActorInventory.ExchangeResult.OK:
 			SetQuest(QUEST_ID, ProgressCommons.TULIMSHAR_OLD_FRIENDSHIP.REWARDS_WITHDREW)
-			AddGP(1000)
+			AddGP(50)
 		ActorInventory.ExchangeResult.MISSING_ITEMS:
 			Mes("Wait, where did the envelope go? Bring it back to me.")
 

@@ -5,7 +5,7 @@
 
 [resource]
 script = ExtResource("2_v0qjy")
-buyPrice = 5
+buyPrice = 2
 sellPrice = 1
 id = 3136767230
 name = "Maggot Slime"

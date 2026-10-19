@@ -5,8 +5,8 @@
 
 [resource]
 script = ExtResource("2_skskin")
-buyPrice = 120
-sellPrice = 12
+buyPrice = 40
+sellPrice = 20
 id = 841480588
 name = "Snake Skin"
 description = "A cured hide from a desert snake."

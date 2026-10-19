@@ -99,7 +99,7 @@ func OnNickosAlive():
 	Mes("No surprise, I've seen him get scared by at the sight of a maggot walking towards him.")
 	Mes("He'd better not waste my time up here and get back quickly, or I may just leave him.")
 	SetQuest(QUEST_ID, ProgressCommons.MINE_EXPLORATION.REWARDS_WITHDREW)
-	AddGP(1000)
+	AddGP(50)
 	OnFarewell()
 
 func OnNickosDead():
@@ -112,7 +112,7 @@ func OnNickosDead():
 	Mes("His pay was his own to collect. Consider it yours for the report.")
 	Mes("At least now I'm sure we won't be going down there. First person I send died. Not a good sign.")
 	SetQuest(QUEST_ID, ProgressCommons.MINE_EXPLORATION.REWARDS_WITHDREW)
-	AddGP(2000)
+	AddGP(100)
 	OnFarewell()
 
 func OnFarewell():

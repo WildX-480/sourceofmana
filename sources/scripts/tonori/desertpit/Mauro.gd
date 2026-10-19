@@ -45,7 +45,7 @@ func OnDeliverWater():
 	SetQuest(WaterPondGlobal.QUEST_ID, ProgressCommons.SNAKE_PIT_BITING_THIRST.REWARDS_WITHDREW)
 	AddItem(DB.GetCellHash("Pitaya"), 10)
 	AddExp(50)
-	AddGP(1000)
+	AddGP(50)
 	AddKarma(1)
 	Mes("I will go back to Tulimshar now, this area is way too dangerous.")
 	Mes("We will keep relying on the much safer wells inside the city. I guess this water belongs to the snakes now.")

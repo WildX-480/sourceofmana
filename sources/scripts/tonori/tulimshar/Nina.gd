@@ -144,7 +144,7 @@ func OnCroissantExchanged(result : ActorInventory.ExchangeResult):
 	match result:
 		ActorInventory.ExchangeResult.OK:
 			SetQuest(ProgressCommons.Quest.NINA_HUNGRY, ProgressCommons.NINA_HUNGRY.REWARDS_WITHDREW)
-			AddGP(100)
+			AddGP(25)
 			Mes("Please, take these Cactus Potions and a bit of gold to cover what you spent.")
 		ActorInventory.ExchangeResult.MISSING_ITEMS:
 			Mes("Oh... Where did it go? Never mind, maybe another time.")

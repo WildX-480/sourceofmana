@@ -17,8 +17,8 @@ _modifiers = Array[ExtResource("2_8o32r")]([SubResource("Resource_y0bgm")])
 
 [resource]
 script = ExtResource("4_ckwuv")
-buyPrice = 55
-sellPrice = 6
+buyPrice = 40
+sellPrice = 20
 id = 3877745440
 name = "Cactus Drink"
 description = "A refreshing cactus drink."

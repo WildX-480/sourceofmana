@@ -22,8 +22,8 @@ _modifiers = Array[ExtResource("2_w5vmb")]([SubResource("Resource_y0bgm"), SubRe
 
 [resource]
 script = ExtResource("4_1ohq4")
-buyPrice = 25
-sellPrice = 3
+buyPrice = 15
+sellPrice = 7
 id = 30320795
 name = "Croissant"
 icon = ExtResource("1_mucoc")

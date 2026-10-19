@@ -99,7 +99,7 @@ giver = "Wend"
 giverLocation = "Tulimshar Gates"
 target = "Straw Hat x1"
 targetLocation = "Tulimshar Market"
-reward = "50 GP"
+reward = "25 GP"
 ```
 
 Unlike entities, the `id` here does not have to be right by hand — the game re-derives it from `name` when the resource loads. The `name` field, on the other hand, does matter, because the next step hashes that exact same string to produce the quest's identifier in code. Keep the two in sync.
@@ -193,7 +193,7 @@ func OnCheck():
         Mes("My hat! You found it!")
         RemoveItem(DB.GetCellHash("Straw Hat"))
         SetQuest(QUEST, ProgressCommons.SIMPLE_ERRAND.REWARDS_WITHDREW)
-        AddGP(50)
+        AddGP(25)
     else:
         Mes("Still by the bakery stand, I think.")
 ```
@@ -211,7 +211,7 @@ These are the functions available inside your script. All of them assume there i
 - **Dialogue:** `Mes` (speak), `Think` (thought bubble), `Narrate` (unattributed narration), `Choice(text, callable)`, `Farewell` and `Greeting` (random polite lines).
 - **Quest:** `GetQuest(id)`, `SetQuest(id, state)`, `IsQuestStarted(id)`, `IsQuestCompleted(id)`.
 - **Inventory:** `HasItem`, `AddItem`, `RemoveItem`. Items are identified by hash, so wrap the name: `DB.GetCellHash("Straw Hat")`.
-- **Rewards:** `AddGP` (money), `AddExp`, `TeachSkill`, `AddKarma`.
+- **Rewards:** `AddGP` (money), `AddExp`, `TeachSkill`, `AddKarma`. Size GP rewards with the [economy model](economy.md).
 - **Warp and UI:** `Warp`, `HighlightUI`, `OpenUI`, `DisplayTracker`.
 
 ### One thing that surprises people: dialogue is queued
