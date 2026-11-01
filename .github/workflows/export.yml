@@ -128,7 +128,7 @@ jobs:
           if [ -n "$DEBUG_KEYSTORE" ]; then
             echo "$DEBUG_KEYSTORE" | base64 -d > /root/debug.keystore
           elif [ "$MODE" = "debug" ]; then
-            keytool -genkeypair -v -keystore /root/debug.keystore -alias androiddebugkey \
+            [ -f /root/debug.keystore ] || keytool -genkeypair -v -keystore /root/debug.keystore -alias androiddebugkey \
               -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android \
               -dname "CN=Android Debug,O=Android,C=US" -storetype pkcs12
           else
