@@ -29,13 +29,31 @@ func ApplyMigrations():
 		return
 
 	while patchCount > currentVersion:
-		ApplyMigration(patches[currentVersion])
+		if not ApplyMigration(patches[currentVersion]):
+			return
 		currentVersion += 1
-	SetVersion(currentVersion)
+		SetVersion(currentVersion)
+	CompactDatabase()
 
-func ApplyMigration(migrationFile : String):
+func CompactDatabase():
+	if ExecuteBindings("VACUUM;", []):
+		Util.PrintInfo("SQL", "Database compacted")
+	else:
+		Util.PrintLog("SQL", "Database compaction failed: " + db.error_message)
+
+func ApplyMigration(migrationFile : String) -> bool:
 	var migration : String = FileAccess.get_file_as_string(migrationFile)
-	Query(migration)
+	queryMutex.lock()
+	var success : bool = db.query(migration)
+	var errorMessage : String = db.error_message
+	if not success:
+		db.query("ROLLBACK;")
+	queryMutex.unlock()
+
+	if not success:
+		Util.PrintLog("SQL", "Migration %s failed: %s" % [migrationFile.get_file(), errorMessage])
+		assert(false, "Migration %s failed: %s" % [migrationFile.get_file(), errorMessage])
+	return success
 
 # Accounts
 func AddAccount(username : String, password : String, email : String) -> bool:
@@ -49,10 +67,10 @@ func AddAccount(username : String, password : String, email : String) -> bool:
 		"email" : email,
 		"created_timestamp" : SQLCommons.Timestamp()
 	}
-	return db.insert_row("account", accountData)
+	return InsertRow("account", accountData)
 
 func RemoveAccount(accountID : int) -> bool:
-	return db.delete_rows("account", "account_id = %d" % accountID)
+	return ExecuteBindings("DELETE FROM account WHERE account_id = ?;", [accountID])
 
 func HasAccount(username : String) -> bool:
 	return not QueryBindings("SELECT account_id FROM account WHERE username = ?;", [username]).is_empty()
@@ -80,7 +98,7 @@ func UpdateAccount(accountID : int, platform : int = NetworkCommons.Platform.UNK
 	}
 	if platform != NetworkCommons.Platform.UNKNOWN:
 		data["platform"] = platform
-	return db.update_rows("account", "account_id = %d;" % accountID, data)
+	return UpdateRow("account", "account_id = ?", [accountID], data)
 
 # Characters
 func AddCharacter(accountID : int, nickname : String, stats : Dictionary, traits : Dictionary, attributes : Dictionary) -> bool:
@@ -89,22 +107,22 @@ func AddCharacter(accountID : int, nickname : String, stats : Dictionary, traits
 		"nickname": nickname,
 		"created_timestamp": SQLCommons.Timestamp()
 	}
-	var ret : bool = db.insert_row("character", charData)
+	var ret : bool = InsertRow("character", charData)
 	if ret:
 		var charID : int = GetCharacterID(accountID, nickname)
-		ret = ret and db.update_rows("stat", "char_id = %d" % charID, stats)
-		ret = ret and db.update_rows("trait", "char_id = %d" % charID, traits)
-		ret = ret and db.update_rows("attribute", "char_id = %d" % charID, attributes)
+		ret = ret and UpdateRow("stat", "char_id = ?", [charID], stats)
+		ret = ret and UpdateRow("trait", "char_id = ?", [charID], traits)
+		ret = ret and UpdateRow("attribute", "char_id = ?", [charID], attributes)
 	return ret
 
 func RemoveCharacter(charID : int) -> bool:
 	if charID != NetworkCommons.PeerUnknownID:
-		return db.delete_rows("character", "char_id = %d" % charID)
+		return ExecuteBindings("DELETE FROM character WHERE char_id = ?;", [charID])
 	return false
 
 func GetCharacters(accountID : int) -> PackedInt64Array:
 	var charIDs : Array[int] = []
-	for result in db.select_rows("character", "account_id = %d" % accountID, ["char_id"]):
+	for result in QueryBindings("SELECT char_id FROM character WHERE account_id = ?;", [accountID]):
 		charIDs.append(result["char_id"])
 	return charIDs
 
@@ -123,12 +141,15 @@ func RefreshCharacter(player : PlayerAgent) -> bool:
 	if charID == NetworkCommons.PeerUnknownID:
 		return false
 
-	var success : bool = charID != NetworkCommons.PeerUnknownID
-	success = success and UpdateAttribute(charID, player.stat)
+	queryMutex.lock()
+	Query("BEGIN TRANSACTION;")
+	var success : bool = UpdateAttribute(charID, player.stat)
 	success = success and UpdateTrait(charID, player.stat)
 	success = success and UpdateStat(charID, player.stat)
 	success = success and UpdateCharacter(player)
 	success = success and UpdateProgress(charID, player.progress)
+	Query("COMMIT;")
+	queryMutex.unlock()
 
 	return success
 
@@ -136,11 +157,7 @@ func HasCharacter(nickname : String) -> bool:
 	return not QueryBindings("SELECT char_id FROM character WHERE nickname = ?;", [nickname]).is_empty()
 
 func CharacterLogin(charID : int) -> bool:
-	var newTimestamp : int = SQLCommons.Timestamp()
-	var data : Dictionary = {
-		"last_timestamp": newTimestamp
-	}
-	return db.update_rows("character", "char_id = %d;" % charID, data)
+	return UpdateRow("character", "char_id = ?", [charID], {"last_timestamp": SQLCommons.Timestamp()})
 
 # Character
 func GetCharacterID(accountID : int, nickname : String) -> int:
@@ -149,7 +166,7 @@ func GetCharacterID(accountID : int, nickname : String) -> int:
 	return NetworkCommons.PeerUnknownID if results.is_empty() else results[0]["char_id"]
 
 func GetCharacter(charID : int) -> Dictionary:
-	var results : Array[Dictionary] = db.select_rows("character", "char_id = %d" % charID, ["*"])
+	var results : Array[Dictionary] = QueryBindings("SELECT * FROM character WHERE char_id = ?;", [charID])
 	assert(results.size() <= 1, "Duplicated character row %d" % charID)
 	return {} if results.is_empty() else results[0]
 
@@ -163,10 +180,7 @@ func UpdateCharacter(player : PlayerAgent) -> bool:
 
 	var map : WorldMap = WorldAgent.GetMapFromAgent(player)
 	var newTimestamp : int = SQLCommons.Timestamp()
-	var data : Dictionary = GetCharacter(charID)
-
-	data["total_time"] = SQLCommons.GetOrAddValue(data, "total_time", 0) + newTimestamp - SQLCommons.GetOrAddValue(data, "last_timestamp", newTimestamp)
-	data["last_timestamp"] = newTimestamp
+	var data : Dictionary = {}
 
 	if map != null and not map.HasFlags(WorldMap.Flags.NO_REJOIN) and ActorCommons.IsAlive(player):
 		data["pos_x"] = player.position.x
@@ -185,11 +199,12 @@ func UpdateCharacter(player : PlayerAgent) -> bool:
 		data["explore_x"] = player.exploreOrigin.pos.x
 		data["explore_y"] = player.exploreOrigin.pos.y
 
-	return db.update_rows("character", "char_id = %d;" % charID, data)
+	var timeUpdated : bool = ExecuteBindings("UPDATE character SET total_time = IFNULL(total_time, 0) + ? - IFNULL(last_timestamp, ?), last_timestamp = ? WHERE char_id = ?;", [newTimestamp, newTimestamp, newTimestamp, charID])
+	return timeUpdated and UpdateRow("character", "char_id = ?", [charID], data)
 
 # Stats
 func GetAttribute(charID : int) -> Dictionary:
-	var results : Array[Dictionary] = db.select_rows("attribute", "char_id = %d" % charID, ["*"])
+	var results : Array[Dictionary] = QueryBindings("SELECT * FROM attribute WHERE char_id = ?;", [charID])
 	assert(results.size() == 1, "Character attribute row is missing")
 	return {} if results.is_empty() else results[0]
 
@@ -204,10 +219,10 @@ func UpdateAttribute(charID : int, stats : ActorStats) -> bool:
 		"endurance" = stats.endurance,
 		"concentration" = stats.concentration
 	}
-	return db.update_rows("attribute", "char_id = %d" % charID, data)
+	return UpdateRow("attribute", "char_id = ?", [charID], data)
 
 func GetTrait(charID : int) -> Dictionary:
-	var results : Array[Dictionary] = db.select_rows("trait", "char_id = %d" % charID, ["*"])
+	var results : Array[Dictionary] = QueryBindings("SELECT * FROM trait WHERE char_id = ?;", [charID])
 	assert(results.size() == 1, "Character trait row is missing")
 	return {} if results.is_empty() else results[0]
 
@@ -224,10 +239,10 @@ func UpdateTrait(charID : int, stats : ActorStats) -> bool:
 		"shape" = stats.shape,
 		"spirit" = stats.spirit
 	}
-	return db.update_rows("trait", "char_id = %d" % charID, data)
+	return UpdateRow("trait", "char_id = ?", [charID], data)
 
 func GetStat(charID : int) -> Dictionary:
-	var results : Array[Dictionary] = db.select_rows("stat", "char_id = %d" % charID, ["*"])
+	var results : Array[Dictionary] = QueryBindings("SELECT * FROM stat WHERE char_id = ?;", [charID])
 	assert(results.size() == 1, "Character stat row is missing")
 	return {} if results.is_empty() else results[0]
 
@@ -244,126 +259,68 @@ func UpdateStat(charID : int, stats : ActorStats) -> bool:
 		"stamina" = stats.stamina,
 		"karma" = stats.karma
 	}
-	return db.update_rows("stat", "char_id = %d" % charID, data)
+	return UpdateRow("stat", "char_id = ?", [charID], data)
 
 # Inventory
-func GetItem(charID : int, itemID : int, customfield : String, storageType : int = 0) -> Dictionary:
-	var results : Array[Dictionary] = QueryBindings("SELECT * FROM item WHERE item_id = ? AND char_id = ? AND storage = ? AND customfield = ?;", [itemID, charID, storageType, customfield])
-	assert(results.size() <= 1, "Duplicated item %d on character %d with storage %d" % [itemID, charID, storageType])
-	return {} if results.is_empty() else results[0]
-
 func AddItem(charID : int, itemID : int, customfield : String, itemCount : int = 1, storageType : int = 0) -> bool:
-	var data : Dictionary = GetItem(charID, itemID, customfield, storageType)
-	# Increment item count
-	if not data.is_empty():
-		return ExecuteBindings("UPDATE item SET count = ? WHERE item_id = ? AND char_id = ? AND storage = ? AND customfield = ?;", [data["count"] + itemCount, itemID, charID, storageType, customfield])
+	return ExecuteBindings("INSERT INTO item (item_id, char_id, count, storage, customfield) VALUES (?, ?, ?, ?, ?) \
+ON CONFLICT (char_id, item_id, storage, customfield) DO UPDATE SET count = count + excluded.count;", [itemID, charID, itemCount, storageType, customfield])
 
-	# Insert new item
-	data = {
-		"item_id": itemID,
-		"char_id": charID,
-		"count": itemCount,
-		"storage": storageType,
-		"customfield": customfield
-	}
-	return db.insert_row("item", data)
-
-func RemoveItem(charID : int, itemID : int, customfield : String, itemCount : int = 1, storageType : int = 0) -> bool:
-	var data : Dictionary = GetItem(charID, itemID, customfield, storageType)
-	if not data.is_empty():
-		# Decrement item count
-		if data["count"] > itemCount:
-			return ExecuteBindings("UPDATE item SET count = ? WHERE item_id = ? AND char_id = ? AND storage = ? AND customfield = ?;", [data["count"] - itemCount, itemID, charID, storageType, customfield])
-		# Remove item
-		elif data["count"] == itemCount:
-			return ExecuteBindings("DELETE FROM item WHERE item_id = ? AND char_id = ? AND storage = ? AND customfield = ?;", [itemID, charID, storageType, customfield])
-	return false
+func SetItem(charID : int, itemID : int, customfield : String, itemCount : int, storageType : int = 0) -> bool:
+	if itemCount <= 0:
+		return ExecuteBindings("DELETE FROM item WHERE char_id = ? AND item_id = ? AND storage = ? AND customfield = ?;", [charID, itemID, storageType, customfield])
+	return ExecuteBindings("INSERT INTO item (item_id, char_id, count, storage, customfield) VALUES (?, ?, ?, ?, ?) \
+ON CONFLICT (char_id, item_id, storage, customfield) DO UPDATE SET count = excluded.count;", [itemID, charID, itemCount, storageType, customfield])
 
 func GetStorage(charID : int, storageType : int = 0) -> Array[Dictionary]:
-	return db.select_rows("item", "char_id = %d AND storage = %d" % [charID, storageType], ["*"])
+	return QueryBindings("SELECT * FROM item WHERE char_id = ? AND storage = ?;", [charID, storageType])
 
 # Equipment
 func GetEquipment(charID : int) -> Dictionary:
-	var results : Array[Dictionary] = db.select_rows("equipment", "char_id = %d" % charID, ["*"])
+	var results : Array[Dictionary] = QueryBindings("SELECT * FROM equipment WHERE char_id = ?;", [charID])
 	assert(results.size() <= 1, "Duplicated equipment on character %d" % charID)
 	return {} if results.is_empty() else results[0]
 
 func UpdateEquipment(charID : int, data : Dictionary) -> bool:
-	return db.update_rows("equipment", "char_id = %d" % charID, data)
+	return UpdateRow("equipment", "char_id = ?", [charID], data)
 
 # Progress
-func UpdateProgress(charID : int, progress : ActorProgress):
-	progress.questMutex.lock()
-	for entryID in progress.quests:
-		Launcher.SQL.SetQuest(charID, entryID, progress.quests[entryID])
-	progress.questMutex.unlock()
-
+func UpdateProgress(charID : int, progress : ActorProgress) -> bool:
 	progress.bestiaryMutex.lock()
-	for entryID in progress.bestiary:
-		Launcher.SQL.SetBestiary(charID, entryID, progress.bestiary[entryID])
+	var bestiary : Dictionary = progress.bestiary.duplicate()
 	progress.bestiaryMutex.unlock()
 
-	for entryID in progress.skills:
-		Launcher.SQL.SetSkill(charID, entryID, progress.skills[entryID])
-
-	return true
+	var success : bool = true
+	for entryID in bestiary:
+		success = SetBestiary(charID, entryID, bestiary[entryID]) and success
+	return success
 
 # Skill
 func SetSkill(charID : int, skillID : int, value : int) -> bool:
-	var results : Array[Dictionary] = db.select_rows("skill", "char_id = %d AND skill_id = %d" % [charID, skillID], ["*"])
-	assert(results.size() <= 1, "Duplicated skill for %d on character %d" % [skillID, charID])
+	return ExecuteBindings("INSERT INTO skill (char_id, skill_id, level) VALUES (?, ?, ?) \
+ON CONFLICT (char_id, skill_id) DO UPDATE SET level = excluded.level;", [charID, skillID, value])
 
-	if not results.is_empty():
-		results[0]["level"] = value
-		return db.update_rows("skill", "char_id = %d AND skill_id = %d" % [charID, skillID], results[0])
-
-	var data : Dictionary = {
-		"char_id": charID,
-		"skill_id": skillID,
-		"level": value,
-	}
-	return db.insert_row("skill", data)
+func RemoveSkill(charID : int, skillID : int) -> bool:
+	return ExecuteBindings("DELETE FROM skill WHERE char_id = ? AND skill_id = ?;", [charID, skillID])
 
 func GetSkills(charID : int) -> Array[Dictionary]:
-	return db.select_rows("skill", "char_id = %d" % [charID], ["*"])
+	return QueryBindings("SELECT * FROM skill WHERE char_id = ?;", [charID])
 
 # Bestiary
 func SetBestiary(charID : int, mobID : int, value : int) -> bool:
-	var results : Array[Dictionary] = db.select_rows("bestiary", "char_id = %d AND mob_id = %d" % [charID, mobID], ["*"])
-	assert(results.size() <= 1, "Duplicated bestiary row for %d on character %d" % [mobID, charID])
-
-	if not results.is_empty():
-		results[0]["killed_count"] = value
-		return db.update_rows("bestiary", "char_id = %d AND mob_id = %d" % [charID, mobID], results[0])
-
-	var data : Dictionary = {
-		"char_id": charID,
-		"mob_id": mobID,
-		"killed_count": value,
-	}
-	return db.insert_row("bestiary", data)
+	return ExecuteBindings("INSERT INTO bestiary (char_id, mob_id, killed_count) VALUES (?, ?, ?) \
+ON CONFLICT (char_id, mob_id) DO UPDATE SET killed_count = excluded.killed_count;", [charID, mobID, value])
 
 func GetBestiaries(charID : int) -> Array[Dictionary]:
-	return db.select_rows("bestiary", "char_id = %d" % [charID], ["*"])
+	return QueryBindings("SELECT * FROM bestiary WHERE char_id = ?;", [charID])
 
 # Quest
 func SetQuest(charID : int, questID : int, value : int) -> bool:
-	var results : Array[Dictionary] = db.select_rows("quest", "char_id = %d AND quest_id = %d" % [charID, questID], ["*"])
-	assert(results.size() <= 1, "Duplicated quest row for %d on character %d" % [questID, charID])
-
-	if not results.is_empty():
-		results[0]["state"] = value
-		return db.update_rows("quest", "char_id = %d AND quest_id = %d" % [charID, questID], results[0])
-
-	var data : Dictionary = {
-		"char_id": charID,
-		"quest_id": questID,
-		"state": value,
-	}
-	return db.insert_row("quest", data)
+	return ExecuteBindings("INSERT INTO quest (char_id, quest_id, state) VALUES (?, ?, ?) \
+ON CONFLICT (char_id, quest_id) DO UPDATE SET state = excluded.state;", [charID, questID, value])
 
 func GetQuests(charID : int) -> Array[Dictionary]:
-	return db.select_rows("quest", "char_id = %d" % [charID], ["*"])
+	return QueryBindings("SELECT * FROM quest WHERE char_id = ?;", [charID])
 
 # Auth Token
 func AddAuthToken(accountID : int, tokenHash : String, ipAddress : String) -> bool:
@@ -376,7 +333,7 @@ func AddAuthToken(accountID : int, tokenHash : String, ipAddress : String) -> bo
 		"created_timestamp": now,
 		"expires_timestamp": now + NetworkCommons.TokenExpirySec,
 	}
-	return db.insert_row("auth_token", data)
+	return InsertRow("auth_token", data)
 
 func ValidateAuthToken(accountID : int, tokenHash : String, ipAddress : String) -> Peers.AccountData:
 	var results : Array[Dictionary] = QueryBindings("SELECT auth_token.account_id, auth_token.expires_timestamp, account.permission FROM auth_token INNER JOIN account ON auth_token.account_id = account.account_id WHERE auth_token.account_id = ? AND auth_token.token_hash = ? AND auth_token.ip_address = ?;", [accountID, tokenHash, ipAddress])
@@ -397,7 +354,7 @@ func RemoveAuthToken(accountID : int, tokenHash : String) -> bool:
 	return ExecuteBindings("DELETE FROM auth_token WHERE account_id = ? AND token_hash = ?;", [accountID, tokenHash])
 
 func CleanExpiredTokens():
-	db.delete_rows("auth_token", "expires_timestamp <= %d" % SQLCommons.Timestamp())
+	ExecuteBindings("DELETE FROM auth_token WHERE expires_timestamp <= ?;", [SQLCommons.Timestamp()])
 
 func GetAccountEmail(accountID : int) -> String:
 	var results : Array[Dictionary] = QueryBindings("SELECT email FROM account WHERE account_id = ?;", [accountID])
@@ -423,19 +380,11 @@ func RemoveAllAuthTokens(accountID : int) -> bool:
 
 # Ban
 func BanAccount(accountID : int, unbanTimestamp : int, reason : String = "") -> bool:
-	var results : Array[Dictionary] = db.select_rows("ban", "account_id = %d" % accountID, ["*"])
-	var data : Dictionary = {
-		"account_id": accountID,
-		"banned_timestamp": SQLCommons.Timestamp(),
-		"unban_timestamp": unbanTimestamp,
-		"reason": reason,
-	}
-	if not results.is_empty():
-		return db.update_rows("ban", "account_id = %d" % accountID, data)
-	return db.insert_row("ban", data)
+	return ExecuteBindings("INSERT INTO ban (account_id, banned_timestamp, unban_timestamp, reason) VALUES (?, ?, ?, ?) \
+ON CONFLICT (account_id) DO UPDATE SET banned_timestamp = excluded.banned_timestamp, unban_timestamp = excluded.unban_timestamp, reason = excluded.reason;", [accountID, SQLCommons.Timestamp(), unbanTimestamp, reason])
 
 func UnbanAccount(accountID : int) -> bool:
-	return db.delete_rows("ban", "account_id = %d" % accountID)
+	return ExecuteBindings("DELETE FROM ban WHERE account_id = ?;", [accountID])
 
 func LoadBans() -> Dictionary[int, int]:
 	var bans : Dictionary[int, int] = {}
@@ -447,15 +396,8 @@ func LoadBans() -> Dictionary[int, int]:
 
 # IP Ban
 func BanIPRange(ipRange : String, reason : String = "") -> bool:
-	var results : Array[Dictionary] = QueryBindings("SELECT ip_range FROM ip_ban WHERE ip_range = ?;", [ipRange])
-	var data : Dictionary = {
-		"ip_range": ipRange,
-		"banned_timestamp": SQLCommons.Timestamp(),
-		"reason": reason,
-	}
-	if not results.is_empty():
-		return db.update_rows("ip_ban", "ip_range = '%s'" % ipRange, data)
-	return db.insert_row("ip_ban", data)
+	return ExecuteBindings("INSERT INTO ip_ban (ip_range, banned_timestamp, reason) VALUES (?, ?, ?) \
+ON CONFLICT (ip_range) DO UPDATE SET banned_timestamp = excluded.banned_timestamp, reason = excluded.reason;", [ipRange, SQLCommons.Timestamp(), reason])
 
 func UnbanIPRange(ipRange : String) -> bool:
 	return ExecuteBindings("DELETE FROM ip_ban WHERE ip_range = ?;", [ipRange])
@@ -479,8 +421,7 @@ func GetAccountID(username : String) -> int:
 	return NetworkCommons.PeerUnknownID
 
 func SetPermission(accountID : int, permission : int) -> bool:
-	var data : Dictionary = { "permission": permission }
-	return db.update_rows("account", "account_id = %d" % accountID, data)
+	return UpdateRow("account", "account_id = ?", [accountID], {"permission": permission})
 
 func GetBanList(filter : String = "") -> Array[Dictionary]:
 	var now : int = SQLCommons.Timestamp()
@@ -505,15 +446,34 @@ func QueryBindings(query : String, params : Array) -> Array[Dictionary]:
 	queryMutex.unlock()
 	return data
 
-func Backup(targetPath : String) -> bool:
-	queryMutex.lock()
-	var ret : bool = db.backup_to(targetPath)
-	queryMutex.unlock()
-	return ret
-
 func ExecuteBindings(query : String, params : Array) -> bool:
 	queryMutex.lock()
 	var ret : bool = db.query_with_bindings(query, params)
+	queryMutex.unlock()
+	return ret
+
+func QuoteColumn(column : String) -> String:
+	return "\"" + column.replace("\"", "\"\"") + "\""
+
+func InsertRow(table : String, data : Dictionary) -> bool:
+	var columns : PackedStringArray = []
+	var placeholders : PackedStringArray = []
+	for column : String in data:
+		columns.append(QuoteColumn(column))
+		placeholders.append("?")
+	return ExecuteBindings("INSERT INTO %s (%s) VALUES (%s);" % [table, ", ".join(columns), ", ".join(placeholders)], data.values())
+
+func UpdateRow(table : String, condition : String, conditionParams : Array, data : Dictionary) -> bool:
+	if data.is_empty():
+		return true
+	var assignments : PackedStringArray = []
+	for column : String in data:
+		assignments.append(QuoteColumn(column) + " = ?")
+	return ExecuteBindings("UPDATE %s SET %s WHERE %s;" % [table, ", ".join(assignments), condition], data.values() + conditionParams)
+
+func Backup(targetPath : String) -> bool:
+	queryMutex.lock()
+	var ret : bool = db.backup_to(targetPath)
 	queryMutex.unlock()
 	return ret
 
@@ -530,8 +490,9 @@ func _post_launch():
 	if not db.open_db():
 		assert(false, "Failed to open database: "+ db.error_message)
 	else:
-		if OS.is_debug_build() and not LauncherCommons.isWeb:
+		if not LauncherCommons.isWeb:
 			Query("PRAGMA journal_mode=WAL;")
+			Query("PRAGMA synchronous=NORMAL;")
 			Query("PRAGMA busy_timeout=5000;")
 		if not Launcher.Debug and not LauncherCommons.isWeb:
 			backups = SQLBackups.new()
@@ -553,17 +514,5 @@ func Destroy():
 		db.close_db()
 
 func Wipe():
-	db.delete_rows("account", "")
-	db.delete_rows("attribute", "")
-	db.delete_rows("auth_token", "")
-	db.delete_rows("ban", "")
-	db.delete_rows("bestiary", "")
-	db.delete_rows("character", "")
-	db.delete_rows("equipment", "")
-	db.delete_rows("ip_ban", "")
-	db.delete_rows("item", "")
-	db.delete_rows("quest", "")
-	db.delete_rows("skill", "")
-	db.delete_rows("sqlite_sequence", "")
-	db.delete_rows("stat", "")
-	db.delete_rows("trait", "")
+	for table in ["account", "attribute", "auth_token", "ban", "bestiary", "character", "equipment", "ip_ban", "item", "quest", "skill", "sqlite_sequence", "stat", "trait"]:
+		Query("DELETE FROM %s;" % table)

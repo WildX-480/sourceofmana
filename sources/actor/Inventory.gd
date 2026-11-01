@@ -98,6 +98,13 @@ func PopItem(cell : ItemCell, count : int, itemIndex : int) -> bool:
 		itemCount -= 1
 	return true
 
+func GetItemCount(cell : ItemCell) -> int:
+	var totalCount : int = 0
+	for item in items:
+		if CellCommons.IsSameItem(cell, item):
+			totalCount += item.count
+	return totalCount
+
 func HasItem(cell : ItemCell, count : int) -> bool:
 	if count <= 0 or not cell:
 		return false
@@ -208,7 +215,7 @@ func AddItem(cell : ItemCell, count : int = 1) -> bool:
 		if actor is PlayerAgent and actor.peerID != NetworkCommons.PeerUnknownID:
 			var charID : int = Peers.GetCharacter(actor.peerID)
 			if charID != NetworkCommons.PeerUnknownID:
-				Launcher.SQL.AddItem(charID, cell.id, cell.customfield, count)
+				Launcher.SQL.SetItem(charID, cell.id, cell.customfield, GetItemCount(cell))
 			Network.ItemAdded(cell.id, cell.customfield, count, actor.peerID)
 		actor.stat.weight += cell.weight * count / 1000.0
 		return true
@@ -219,7 +226,7 @@ func RemoveItem(cell : ItemCell, count : int, itemIndex : int) -> bool:
 		if actor is PlayerAgent and actor.peerID != NetworkCommons.PeerUnknownID:
 			var charID : int = Peers.GetCharacter(actor.peerID)
 			if charID != NetworkCommons.PeerUnknownID:
-				Launcher.SQL.RemoveItem(charID, cell.id, cell.customfield, count)
+				Launcher.SQL.SetItem(charID, cell.id, cell.customfield, GetItemCount(cell))
 			Network.ItemRemoved(cell.id, cell.customfield, count, itemIndex, actor.peerID)
 			items_changed.emit()
 		actor.stat.weight -= cell.weight * count / 1000.0

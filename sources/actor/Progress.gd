@@ -12,14 +12,14 @@ var questMutex : Mutex						= null
 var bestiaryMutex : Mutex					= null
 
 # Quest progress
-func SetQuest(questID : int, state : int):
+func SetQuest(questID : int, state : int, persist : bool = true):
 	questMutex.lock()
 	quests[questID] = state
 	questMutex.unlock()
 
 	if actor is PlayerAgent and actor.peerID != NetworkCommons.PeerUnknownID:
 		var charID : int = Peers.GetCharacter(actor.peerID)
-		if charID != NetworkCommons.PeerUnknownID:
+		if persist and charID != NetworkCommons.PeerUnknownID:
 			Launcher.SQL.SetQuest(charID, questID, state)
 		Network.UpdateQuest(questID, state, actor.peerID)
 
@@ -56,7 +56,7 @@ func HasSkill(cell : SkillCell, level : int = 1) -> bool:
 	assert(cell != null, "Provided skill cell is null")
 	return skills.get(cell.id, 0) >= level
 
-func AddSkill(cell : SkillCell, level : int):
+func AddSkill(cell : SkillCell, level : int, persist : bool = true):
 	assert(cell != null, "Provided skill cell is null")
 	if not cell:
 		return
@@ -67,6 +67,9 @@ func AddSkill(cell : SkillCell, level : int):
 	skills[cell.id] = level
 
 	if actor is PlayerAgent and actor.peerID != NetworkCommons.PeerUnknownID:
+		var charID : int = Peers.GetCharacter(actor.peerID)
+		if persist and charID != NetworkCommons.PeerUnknownID:
+			Launcher.SQL.SetSkill(charID, cell.id, level)
 		Network.UpdateSkill(cell.id, level, actor.peerID)
 
 func GetSkillLevel(cell : SkillCell) -> int:
@@ -80,6 +83,9 @@ func RemoveSkill(cell : SkillCell):
 	skills.erase(cell.id)
 
 	if actor is PlayerAgent and actor.peerID != NetworkCommons.PeerUnknownID:
+		var charID : int = Peers.GetCharacter(actor.peerID)
+		if charID != NetworkCommons.PeerUnknownID:
+			Launcher.SQL.RemoveSkill(charID, cell.id)
 		Network.UpdateSkill(cell.id, 0, actor.peerID)
 
 #
@@ -87,9 +93,9 @@ func ImportProgress(charID : int):
 	for entry in Launcher.SQL.GetSkills(charID):
 		var skill : SkillCell = DB.GetSkill(entry.get("skill_id", DB.UnknownHash))
 		if skill:
-			AddSkill(skill, entry.get("level", 1))
+			AddSkill(skill, entry.get("level", 1), false)
 	for entry in Launcher.SQL.GetQuests(charID):
-		SetQuest(entry.get("quest_id", DB.UnknownHash), entry.get("state", 0))
+		SetQuest(entry.get("quest_id", DB.UnknownHash), entry.get("state", 0), false)
 	for entry in Launcher.SQL.GetBestiaries(charID):
 		AddBestiary(entry.get("mob_id", DB.UnknownHash), entry.get("killed_count", 0))
 

@@ -8,7 +8,7 @@ const DBName : String					= "live.db"
 const BackupPath : String				= "sql-backups/"
 const BackupPathTesting : String		= "sql-testing-backups/"
 const BackupCheckIntervalSec : int		= 2
-const BackupPlayersSec : int			= 10 * 60 # Every minute
+const BackupPlayersSec : int			= 10 * 60 # Every 10 minutes
 
 const DailyBackupIntervalSec : int		= 60 * 60 * 24
 const WeeklyBackupIntervalSec : int		= 60 * 60 * 24 * 7
